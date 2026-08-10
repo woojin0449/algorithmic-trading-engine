@@ -16,3 +16,20 @@ venv/
 *.log
 *.log.*
 nohup.out
+
+
+# --- Master Trading Terminal Custom Rules ---
+# 1. Security & Credentials
+.env
+kis_token.json
+
+# 2. Local State & Data (Do not upload real money/trade data)
+*.json
+!balance.json.example
+*.csv
+!trade_history.csv.example
+
+# 3. Logs
+*.log
+*.log.*
+nohup.out
