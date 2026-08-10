@@ -1,30 +1,18 @@
-text# 1. 파이썬 컴파일 캐시 및 바이트코드 (삭제해도 무방한 파일들)
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-.mypy_cache/
-
-# 2. 가상 환경 (용량이 크고 로컬 전용이므로 Git에 올리면 안 됨)
-venv/
-.venv/
-env/
-ENV/
-env.bak/
-venv.bak/
-
-# 3. 배포 및 패키징 빌드 결과물
-build/
-dist/
-*.egg-info/
-
-# 4. 환경 변수 및 비밀 키 파일 (보안 파일)
+# 1. 보안 인증 정보 
 .env
-.env.local
-.secrets
+kis_token.json
 
-# 5. 운영체제 및 에디터 임시 파일 (macOS, Windows, VS Code)
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+# 2. 파이썬 컴파일 캐시 및 바이트코드
+__pycache__/
+venv/
+*.pyc
+
+# 3. 로컬 상태 저장 파일 및 데이터
+*.json
+!balance.json.example  
+*.csv
+
+# 4. 로그 파일 
+*.log
+*.log.*
+nohup.out
