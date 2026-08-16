@@ -14,7 +14,7 @@ def safe_save_json(data, filename):
     os.replace(tmp_file, filename)
 
 def load_json(filepath, default_val = None):
-        if default_val is None:
+    if default_val is None:
         default_val = {}
     if os.path.exists(filepath):
         try:
