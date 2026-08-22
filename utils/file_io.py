@@ -39,3 +39,17 @@ def save_closed_trade(ticker, exit_price, qty, cost, revenue, roi_pct, reason, f
         #string format time으로 저장
         exit_date = datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')
         writer.writerow([exit_date,ticker, f"{exit_price:.2f}", qty, f"{cost:.2f}", f"{revenue:.2f}", f"{roi_pct:.2f}", reason])
+        
+# If the ticker.csv file is missing, the file is automatically generated with default stocks.
+def ensure_tickers_file(filepath="data/tickers.csv"):
+    if not os.path.exists(filepath):
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        default_tickers = ["AVGO", "INTC", "MU", "AMD", "CRWD", "NVDA"]
+        
+        with open(filepath, 'w', encoding='utf-8', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Ticker']) # 헤더
+            for ticker in default_tickers:
+                writer.writerow([ticker])
+                
+        logging.info(f"[{filepath}] 종목 리스트가 없어 기본 유니버스로 자동 생성했습니다.")
