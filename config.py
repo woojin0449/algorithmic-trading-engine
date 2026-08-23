@@ -17,4 +17,4 @@ RETRY_DELAY = 2           # 재시도 대기 시간 (초)
 STATE_FILE = "turtle_state.json"
 LAST_LIQUIDATION_FILE = "last_liquidation.json"
 BALANCE_FILE = "balance.json"
-TICKERS_FILE = "tickers.json"  # 관심 종목 리스트 관리용
+TICKERS_FILE = "data/tickers.csv"
