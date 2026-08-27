@@ -1,3 +1,14 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+APP_KEY = os.getenv("APP_KEY")
+APP_SECRET = os.getenv("APP_SECRET")
+CANO = os.getenv("CANO")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
  # 1. Trading parameters
  
 RISK_PER_UNIT = 0.01      # 1 유닛 당 총자산의 1% 리스크
@@ -14,7 +25,7 @@ RETRY_DELAY = 2           # 재시도 대기 시간 (초)
 
  # 3. Date and Status management file paths
  
-STATE_FILE = "turtle_state.json"
+STATE_FILE = "trading_state.json"
 LAST_LIQUIDATION_FILE = "last_liquidation.json"
 BALANCE_FILE = "balance.json"
 TICKERS_FILE = "data/tickers.csv"

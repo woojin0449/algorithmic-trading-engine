@@ -4,9 +4,8 @@ import pytz
 
 from config import *
 from api.kis_broker import send_us_order
-from utils.file_io import safe_save_json, load_json
+from utils.file_io import safe_save_json, load_json, save_closed_trade
 from utils.logger import logger
-
 
 def update_cash_balance(amount_change):
     #BALANCE_FILE config 에 존재 config 만들어야함.
@@ -84,7 +83,7 @@ def handle_entry(token, ticker, state, indicators, total_equity):
                 logger.warning(f"[{ticker}] 현금 부족: {usd_cash:.2f} < {cost:.2f}. 매수 진입 포기.")
                 return
 
-            if send_us_order(token, ticker, True, unit_size, curr):
+            if send_us_order(token, APP_KEY, APP_SECRET, CANO, ticker, True, unit_size, curr):
                 update_cash_balance(-cost)
                 msg = f"[1차 진입] {ticker} 55일 돌파\n수량: {unit_size}주 / 단가: ${curr:.2f}"
                 logger.info(msg)
@@ -132,7 +131,7 @@ def handle_entry(token, ticker, state, indicators, total_equity):
                 logger.warning(f"[{ticker}] 현금 부족: {usd_cash:.2f} < {cost:.2f}. 추가 매수 포기.")
                 return
 
-            if send_us_order(token, ticker, True, add_qty, curr):
+            if send_us_order(token, APP_KEY, APP_SECRET, CANO, ticker, True, add_qty, curr):
                 update_cash_balance(-cost)
                 new_units = p['units'] + 1
                 msg = f"[{new_units}차 피라미딩] {ticker} 불타기\n수량: {add_qty}주 / 단가: ${curr:.2f}"
@@ -173,7 +172,7 @@ def handle_exit(token, ticker, state, indicators):
         exit_reason = f"2.0N Hard Stop(손절가 ${stop_loss_price:.2f} 도달)"
 
     if exit_reason:
-        if send_us_order(token, ticker, False, p['qty'], curr):
+        if send_us_order(token, APP_KEY, APP_SECRET, CANO, ticker, False, p['qty'], curr):
             # [수정] Issue 1: 최종 수익률(ROI) 계산
             revenue = curr * p['qty']
             cost = p['total_entry_price']
@@ -186,6 +185,9 @@ def handle_exit(token, ticker, state, indicators):
             
             logger.info(msg.replace("\n", " | "))
             #텔레그램 전송은 main에서
+            
+            #Added file saving functionality.
+            save_closed_trade(ticker, curr, p['qty'], cost, revenue, roi_pct, exit_reason)
             
             last_liquidated = load_json(LAST_LIQUIDATION_FILE)or {}
             last_liquidated[ticker] = datetime.now(pytz.timezone('Asia/Seoul')).isoformat()
