@@ -25,7 +25,7 @@ if app_mode == "🐢 Turtle Frontend":
     # ==========================================
     # 1. 기본 설정 및 파일 경로
     # ==========================================
-    STATE_FILE = "turtle_state.json"
+    STATE_FILE = "trading_state.json"
     BALANCE_FILE = "balance.json"
     TRADE_FILE = "trade_history.csv"
     CLOSED_TRADE_FILE = "closed_trades.csv" # Phase 1 연동 파일 추가

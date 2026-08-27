@@ -1,9 +1,6 @@
 import requests
 from utils.logger import logger
-
-# To be loaded from config.py later
-TELEGRAM_TOKEN = "TELEGRAM_TOKEN"
-TELEGRAM_CHAT_ID = "TELEGRAM_CHAT_ID"
+from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 
 # Global offset to prevent processing the same message multiple times
 LAST_UPDATE_ID = 0
