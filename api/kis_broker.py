@@ -4,6 +4,8 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
+from utils.file_io import load_json, safe_save_json, ensure_tickers_file
+from utils.logger import logger
 
 # To be loaded from config.py or environment variables later
 URL_BASE = "https://openapivts.koreainvestment.com:29443"
