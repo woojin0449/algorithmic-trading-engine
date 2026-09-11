@@ -4,7 +4,7 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
-from utils.file_io import load_json, safe_save_json, ensure_tickers_file
+from utils.file_io import load_json, safe_save_json
 from utils.logger import logger
 from config import URL_BASE, ACNT_PRDT_CD
 # To be loaded from config.py or environment variables later

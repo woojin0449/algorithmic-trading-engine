@@ -36,3 +36,6 @@ TICKERS_FILE = "data/tickers.csv"
 URL_BASE = "https://openapivts.koreainvestment.com:29443"
 
 KST = ZoneInfo("Asia/Seoul")
+
+ACNT_PRDT_CD = "01"
+CANO = "50203546"

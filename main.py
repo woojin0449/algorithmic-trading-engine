@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 # 1. Global Settings and Utilities
 from config import *
 from utils.logger import logger
-from utils.file_io import load_json, safe_save_json, ensure_tickers_file
+from utils.file_io import load_json, safe_save_json
 from utils.time_checker import is_market_open
 
 # 2. communications network (API)
@@ -20,7 +20,7 @@ from api.telegram_bot import send_message, get_new_commands
 
 # 3. Business logic (Core)
 from core.strategy import calculate_turtle_indicators
-from core.execution import update_balance_and_positions, handle_entry, handle_exit
+from core.execution import  handle_entry, handle_exit
 
 from utils.file_io import load_json, safe_save_json
 # 4. Load .env file (apply environment variables)
