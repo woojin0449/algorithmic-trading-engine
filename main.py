@@ -22,6 +22,7 @@ from api.telegram_bot import send_message, get_new_commands
 from core.strategy import calculate_turtle_indicators
 from core.execution import update_balance_and_positions, handle_entry, handle_exit
 
+from utils.file_io import load_json, safe_save_json
 # 4. Load .env file (apply environment variables)
 load_dotenv()
 APP_KEY = os.getenv("APP_KEY")
@@ -62,57 +63,91 @@ def check_telegram_commands(is_paused, state):
 
 def run_cycle(last_report_hour, is_paused):
     logger.info("Start a new scan cycle")
-
+    config = {
+        "APP_KEY": APP_KEY,
+        "APP_SECRET": APP_SECRET,
+        "CANO": CANO,
+        "ACNT_PRDT_CD": ACNT_PRDT_CD,
+        "URL_BASE": URL_BASE
+    }
     if not is_market_open() and not is_paused:
         logger.info("The Nasdaq is currently closed for trading. I am skipping the trading update and standing by.")
         return last_report_hour, is_paused
 
-    token = get_access_token(APP_KEY, APP_SECRET)
+    token = get_access_token(config["APP_KEY"], config["APP_SECRET"])
     if not token:
         logger.error("Skipping the cycle due to token issuance failure.")
         return last_report_hour, is_paused
 
     state = load_json(STATE_FILE) or {}
-
-    now_kst = datetime.now(KST)
-    current_hour = now_kst.hour
-    if current_hour != last_report_hour:
-        bal_data = load_json(BALANCE_FILE) or {}
-        send_message(f" [Periodic Report] Operating Normally Total Assets: ${bal_data.get('total_equity', 0):,.2f}\n가용 현금: ${bal_data.get('usd_balance', 0):,.2f}")
-        last_report_hour = current_hour
-
     is_paused = check_telegram_commands(is_paused, state)
-
-    tickers = load_tickers()
-    count = 0
-
     if is_paused:
         logger.info("Trading is suspended. Only data updates and liquidation checks are being performed.")
 
-    for ticker in tickers:
+    #미체결 관리 및 잔고 업데이트
+    
+    resolve_pending_orders(token, config, state)
+    state = update_account_balance(token, config, state)
+
+    safe_save_json(state, STATE_FILE)
+
+    current_cash = state.get("cash_balance", 0.0)
+    total_equity = state.get("total_equity", 20000.0)
+    logger.info(f"Synchronization complete. Currently available cash: ${current_cash:,.2f}")
+
+    now_utc = datetime.now(timezone.utc).isoformat(timespec='seconds')
+    current_hour = now_utc.hour
+    if current_hour != last_report_hour:
+        send_message(f" [Periodic Report] Operating Normally Total Assets: ${total_equity:,.2f}\n가용 현금: ${current_cash:,.2f}")
+        last_report_hour = current_hour
+    #abandon code
+    # tickers = load_tickers()
+    count = 0
+
+    universe_data = load_json(UNIVERSE_FILE)or {}
+    universe_stocks = universe_data.get("stocks", {})
+
+    local_positions = state.get("positions", {})
+    target_tickers = list(set(universe_stocks.keys()) | set(local_positions.keys()))
+
+    for ticker in target_tickers:
         try:
-            df = yf.download(ticker, period="1y",interval="1d",progress=False)
+            ticker_info = universe_stocks.get(ticker, local_positions.get(ticker,{}))
+
+            excd = ticker_info.get('market', 'NAS')
+            order_excd = ticker_info.get('order_exchange','NASD')
+
+            df, curr= get_prepared_data(token, config["APP_KEY"], config["APP_SECRET"], ticker, excd)
+
+            if df is None or curr <= 0:
+                logger.warning(f"[{ticker}] 데이터 확보 실패로 이번 사이클 건너뜀.")
+                continue
+
             indicators = calculate_turtle_indicators(df)
 
             if indicators is None:
                 logger.warning(f"[{ticker}] Skipped due to insufficient data or delisting.")
                 continue
+            
+            indicators['current_price'] = curr
+            indicators['order_exchange'] = order_excd
 
-            curr = indicators['current_price']
+            is_just_sold = False
 
-            if ticker in state and state[ticker].get('units', 0) > 0:
-                state[ticker]['current_price'] = curr
+            if ticker in local_positions:
+                is_just_sold = handle_exit(token, config, state, ticker, indicators)
 
-            handle_exit(token, ticker, state, indicators)
+            if is_just_sold:
+                continue
+
+            #pending_orders 기록 주문 번호 추가. @@@
 
             if not is_paused:
-                bal_data = load_json(BALANCE_FILE) or {}
-                total_equity = bal_data.get("total_equity", 20000.0)
-                handle_entry(token, ticker, state, indicators,total_equity)
+                handle_entry(token, config, state, ticker, indicators,current_cash, total_equity)
             
             count += 1
             if count %10 == 0:
-                logger.info(f"Progress: {count}/{len(tickers)} completed")
+                logger.info(f"Progress: {count}/{len(target_tickers)} completed")
             
 
         except Exception as e:
@@ -120,8 +155,6 @@ def run_cycle(last_report_hour, is_paused):
 
         time.sleep(0.6)
     # Cycle end
-    update_balance_and_positions(state)
-    safe_save_json(state, STATE_FILE)
 
     logger.info("Scanning of all categories complete. Standing by for 5 minutes...")
     gc.collect()
@@ -150,5 +183,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("The system has been safely shut down by the user.")
         send_message("The system has been safely shut down manually.")
-            
-
