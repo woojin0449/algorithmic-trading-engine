@@ -62,6 +62,9 @@ def get_access_token(app_key, app_secret):
 
 # Fetch current account balance and equity from KIS API
 def get_account_balance(token, app_key, app_secret, cano, acnt_prdt_cd):
+    """
+    총 잔고, 구매 가능 금액, kis_position을 리턴합니다. 
+    """
     url1 = f"{URL_BASE}/uapi/overseas-stock/v1/trading/inquire-psamount"
     headers1 = {
         "content-type": "application/json",
@@ -92,6 +95,7 @@ def get_account_balance(token, app_key, app_secret, cano, acnt_prdt_cd):
     try:
         res1 = requests.get(url1, headers=headers1, params=params1, timeout=10)
         data1 = res1.json()
+        time.sleep(1.0)
         res2 = requests.get(url2, headers=headers2, params=params2, timeout=10)
         data2 = res2.json()
 
