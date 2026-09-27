@@ -201,14 +201,17 @@ def resolve_pending_orders(token, config, state):
 
     state["pending_orders"] = survived_pending
 
-def update_account_balance(token, config, state, kis_positions, current_cash):
+def update_account_balance(state, kis_positions, current_cash, total_equity):
+    state["cash_balance"] = current_cash
+    state["total_equity"] = total_equity
+    
     local_positions = state.setdefault("positions", {})
     pending_orders = state.get("pending_orders", [])
     pending_tickers = {order.get("ticker") for order in pending_orders}
 
     for ticker, kis_data in kis_positions.items():
         if ticker not in local_positions:
-            logger.warning(f"[{ticker}] KIS 장고 발견. 기존 보유분 초기화.")
+            logger.warning(f"[{ticker}] KIS 잔고 발견. 기존 보유분 초기화.")
             local_positions[ticker] = {
                 "qty": kis_data["qty"],
                 "units": 1,
@@ -237,6 +240,7 @@ def update_account_balance(token, config, state, kis_positions, current_cash):
                 continue
             logger.info(f"[{ticker}] KIS 잔고에서 소멸. 로컬 포지션 제거.")
             del local_positions[ticker]
+    return state
 
 # def update_balance_and_positions(state):
 #     bal_data = load_json(BALANCE_FILE) or {"usd_balance": 20000.0}
