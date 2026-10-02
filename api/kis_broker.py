@@ -133,7 +133,7 @@ def get_account_balance(token, app_key, app_secret, cano, acnt_prdt_cd):
 
     except Exception as e:
         logger.error(f"Balance API error: {e}")
-        return 0.0, 0.0, {}
+        return None, None, None
 
 def get_order_execution(token, app_key, app_secret, cano, acnt_prdt_cd):
     """
