@@ -89,7 +89,11 @@ def run_cycle(last_report_hour, is_paused):
     resolve_pending_orders(token, config, state)
     time.sleep(1.0)
     total_equity, current_cash, kis_positions = get_account_balance(token, APP_KEY, APP_SECRET, CANO, ACNT_PRDT_CD)
-    state = update_account_balance(state, kis_positions, current_cash, total_equity)
+    if kis_positions is None:
+        logger.error("잔고 API 호출 실패. 기존 로컬 장부를 유지하고 다음 사이클로 넘어갑니다.")
+
+    else:
+        state = update_account_balance(state, kis_positions, current_cash, total_equity)
 
     safe_save_json(state, STATE_FILE)
     # Dead Code
