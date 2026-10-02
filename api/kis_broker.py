@@ -129,7 +129,7 @@ def get_account_balance(token, app_key, app_secret, cano, acnt_prdt_cd):
             
         else:
             logger.error(f"Failed to fetch balance. Msg1: {data1.get('msg1')}, Msg2: {data2.get('msg1')}")
-            return 0.0, 0.0, {}
+            return None, None, None
 
     except Exception as e:
         logger.error(f"Balance API error: {e}")
