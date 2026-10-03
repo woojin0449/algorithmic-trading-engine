@@ -4,6 +4,7 @@ import os
 import time
 import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from utils.file_io import load_json, safe_save_json
 from utils.logger import logger
 from config import URL_BASE, ACNT_PRDT_CD
@@ -16,6 +17,7 @@ MAX_RETRIES = 3
 RETRY_DELAY = 2
 SLIPPAGE_FACTOR = 0.003
 TOKEN_FILE = "kis_token.json"
+
 
 # Retrieve existing valid token from file or issue a new one from KIS API
 def get_access_token(app_key, app_secret):
@@ -129,25 +131,29 @@ def get_account_balance(token, app_key, app_secret, cano, acnt_prdt_cd):
             
         else:
             logger.error(f"Failed to fetch balance. Msg1: {data1.get('msg1')}, Msg2: {data2.get('msg1')}")
-            return None, None, None
+            return 0.0, 0.0, {}
 
     except Exception as e:
         logger.error(f"Balance API error: {e}")
-        return None, None, None
+        return 0.0, 0.0, {}
 
 def get_order_execution(token, app_key, app_secret, cano, acnt_prdt_cd):
     """
     미체결 및 체결 내역을 조회하여 배열로 리턴합니다.
     (실제 KIS API 스펙에 맞춘 VTTS3018R 등 체결조회 TR_ID 사용)
     """
-    url = f"{URL_BASE}/uapi/overseas-stock/v1/trading/inquire-nccs"
+    url = f"{URL_BASE}/uapi/overseas-stock/v1/trading/inquire-ccnl"
+    now = datetime.now(ZoneInfo("America/New_York"))
+    end_date = now.strftime("%Y%m%d")
+    start_date = (now - timedelta(days=7)).strftime("%Y%m%d")
     headers = {
         "content-type": "application/json", "authorization": f"Bearer {token}",
-        "appkey": app_key, "appsecret": app_secret, "tr_id": "VTTS3018R", "custtype": "P"
+        "appkey": app_key, "appsecret": app_secret, "tr_id": "VTTS3035R", "custtype": "P"
     }
     params = {
-        "CANO": cano, "ACNT_PRDT_CD": acnt_prdt_cd, "OVRS_EXCG_CD": "NASD",
-        "SORT_SQN": "DS", "CTX_AREA_FK200": "", "CTX_AREA_NK200": ""
+        "CANO": cano, "ACNT_PRDT_CD": acnt_prdt_cd,"PDNO":  "","ORD_STRT_DT": start_date,"ORD_END_DT":end_date, "SLL_BUY_DVSN": "00",
+        "CCLD_NCCS_DVSN":"00",   "OVRS_EXCG_CD": "",
+        "SORT_SQN": "DS","ORD_DT": "","ORD_GNO_BRNO":"","ODNO":"", "CTX_AREA_FK200": "", "CTX_AREA_NK200": ""
     }
     try:
         res = requests.get(url, headers=headers, params=params, timeout=10)

@@ -124,7 +124,6 @@ def resolve_pending_orders(token, config, state):
     pending_list = state.get("pending_orders", [])
     if not pending_list:
         return
-
     execution_data = get_order_execution(token, config["APP_KEY"], config["APP_SECRET"], config["CANO"], config["ACNT_PRDT_CD"])
     api_orders = {order["odno"]: order for order in execution_data if order.get("odno")}
 
@@ -134,12 +133,34 @@ def resolve_pending_orders(token, config, state):
         odno = p_order.get("odno")
         ticker = p_order.get("ticker")
         action = p_order.get("action")
+        order_timestamp = p_order.get("timestamp")
+        
+        should_cancel = False
+        #10분 지났을때 초기화
+        if order_timestamp:
+            try:
+                order_dt = datetime.fromisoformat(order_timestamp)
+                if (datetime.now(timezone.utc) - order_dt).total_seconds() >= 600:
+                    should_cancel = True
+            except Exception as e:
+                logger.warning(f"[{ticker}] 시간 파싱 실패: {e}")
 
+        if should_cancel:
+            logger.info(f"[{ticker}] 10분 경과 미체결 주문 취소 (ODNO:{odno})")
+            cancel_order(token, config["APP_KEY"], config["APP_SECRET"], config["CANO"], config["ACNT_PRDT_CD"], ticker, odno, p_order.get("exchange", "NASD"))
+
+            if ticker in state.get("positions", {}):
+                state["positions"][ticker]["pending_action"] = False
+
+            continue
+
+        # 5분이 아직 안지났고, api에 없을때 유보
         if odno not in api_orders:
             logger.warning(f"[{ticker}] API 미응답 (ODNO:{odno}). 다음 사이클 대기.")
             survived_pending.append(p_order)
             continue
 
+        # 5분이 아직 안지났고, api에 있을떄.
         match = api_orders[odno]
         
         try:
@@ -171,33 +192,11 @@ def resolve_pending_orders(token, config, state):
                 _finalize_sell_execution(state, p_order, match)
             if ticker in state.get("positions", {}):
                 state["positions"][ticker]["pending_action"] = False
+                #여기에 파일 저장기능?
             continue
 
-        # 3. 미체결 상태 (5분 경과 취소 로직)
         logger.info(f"[{ticker}] 미체결 유지 (ODNO:{odno}, 체결:{filled_qty}, 미체결:{nccs_qty})")
-        
-        order_timestamp = p_order.get("timestamp")
-        should_cancel = False
-        
-        if order_timestamp:
-            try:
-                order_dt = datetime.fromisoformat(order_timestamp)
-                if (datetime.now(timezone.utc) - order_dt).total_seconds() >= 300:
-                    should_cancel = True
-            except Exception as e:
-                logger.warning(f"[{ticker}] 시간 파싱 실패: {e}")
-
-        if should_cancel:
-            logger.info(f"[{ticker}] 5분 경과 미체결 주문 취소 (ODNO:{odno}, 잔여:{nccs_qty}주)")
-            cancel_success = cancel_order(token, config["APP_KEY"], config["APP_SECRET"], config["CANO"], config["ACNT_PRDT_CD"], ticker, odno, p_order.get("exchange", "NASD"))
-            if cancel_success:
-                if ticker in state.get("positions", {}):
-                    state["positions"][ticker]["pending_action"] = False
-                continue
-            else:
-                survived_pending.append(p_order)
-        else:
-            survived_pending.append(p_order)
+        survived_pending.append(p_order)
 
     state["pending_orders"] = survived_pending
 
