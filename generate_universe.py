@@ -92,3 +92,16 @@ def update_universe(token, app_key, app_secret, excd="NAS", target_rank=100):
     except Exception as e:
         logger.error(f"유니버스 API 통신 중 에러 발생: {e}")
         return False
+
+if __name__ == "__main__":
+    from api.kis_broker import get_access_token 
+    from config import APP_KEY, APP_SECRET 
+
+    print("유니버스 수동 업데이트를 시작합니다...")
+    token = get_access_token(APP_KEY, APP_SECRET)
+    
+    if token:
+        update_universe(token, APP_KEY, APP_SECRET, excd="NAS", target_rank=100)
+        print("유니버스 업데이트 완료!")
+    else:
+        print("토큰 발급 실패로 유니버스를 업데이트할 수 없습니다.")

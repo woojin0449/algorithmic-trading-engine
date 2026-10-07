@@ -1,14 +1,12 @@
 import os
-import requests
+# import requests
 import json
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from api.kis_broker import *
+from generate_universe import update_universe
+from config import *
 # 환경 변수 세팅
-load_dotenv()
-APP_KEY = os.getenv("APP_KEY")
-APP_SECRET = os.getenv("APP_SECRET")
-CANO = os.getenv("CANO")
-ACNT_PRDT_CD = "01"
+
 
 BASE_URL = "https://openapivts.koreainvestment.com:29443"
 
@@ -228,11 +226,12 @@ def created_universe(token, excd="NAS"):
     print(json.dumps(data, indent=2, ensure_ascii=False))
 
 if __name__ == "__main__":
-    print(f"📡 테스트 계좌번호: {CANO}-{ACNT_PRDT_CD} 통신 시작...")
+    # print(f"📡 테스트 계좌번호: {CANO}-{ACNT_PRDT_CD} 통신 시작...")
     
     # 1. 토큰 발급
-    fresh_token = get_new_token()
-    
+    # fresh_token = get_new_token()
+    token = get_access_token(APP_KEY, APP_SECRET)
+    update_universe(token, APP_KEY, APP_SECRET, "NAS", 100)
     # if fresh_token:
     #     # 2. 잔고 & 미체결 조회
     #     check_overseas_balance(fresh_token)
@@ -241,4 +240,4 @@ if __name__ == "__main__":
     #     check_current_price(fresh_token, ticker="TSM", excd="NYS")
     # get_access_token(APP_KEY, APP_SECRET)
     # saved_token = load_json("kis_token.json")
-    created_universe(fresh_token)
+    # created_universe(fresh_token)
