@@ -125,12 +125,14 @@ def resolve_pending_orders(token, config, state):
     if not pending_list:
         return
     execution_data = get_order_execution(token, config["APP_KEY"], config["APP_SECRET"], config["CANO"], config["ACNT_PRDT_CD"])
-    api_orders = {order["odno"]: order for order in execution_data if order.get("odno")}
+    api_orders = {str(int(order["odno"])): order for order in execution_data if order.get("odno")}
 
     survived_pending = []
 
     for p_order in pending_list:
-        odno = p_order.get("odno")
+        raw_odno = p_order.get("odno")
+        # 2. 로컬 주문번호도 비교를 위해 앞의 0 제거 (빈 값 방지)
+        odno = str(int(raw_odno)) if raw_odno else ""
         ticker = p_order.get("ticker")
         action = p_order.get("action")
         order_timestamp = p_order.get("timestamp")
