@@ -33,3 +33,4 @@ kis_token.json
 *.log
 *.log.*
 nohup.out
+.venv/
