@@ -165,8 +165,9 @@ def run_cycle(last_report_hour, is_paused):
 
         except Exception as e:
             logger.exception(f"[{ticker}] Exception occurred during processing: {e}")
-
-        time.sleep(0.6)
+        finally:
+            time.sleep(1)
+            
     # Cycle end
     #파일 최종 저장
     safe_save_json(state, STATE_FILE)
