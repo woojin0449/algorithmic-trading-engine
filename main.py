@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from config import *
 from utils.logger import logger
 from utils.file_io import load_json, safe_save_json
-from utils.time_checker import is_market_open
+from utils.time_checker import is_market_open, check_holiday_and_shutdown
 
 # 2. communications network (API)
 from api.kis_broker import get_access_token, get_account_balance
@@ -30,21 +30,6 @@ CANO = os.getenv("CANO")
 
 # 5. data logic
 from data.market_data import get_prepared_data
-
-# def load_tickers():
-#     ensure_tickers_file(TICKERS_FILE)
-#     tickers = []
-#     try:
-#         with open(TICKERS_FILE, 'r', encoding='utf-8') as f:
-#             reader = csv.reader(f)
-#             next(reader, None)
-#             for row in  reader:
-#                 if row and row[0].strip():
-#                     tickers.append(row[0].strip())
-
-#     except Exception as e:
-#         logger.error(f"Failed to read ticker file.: {e}")
-#     return tickers
 
 def check_telegram_commands(is_paused, state):
     commands = get_new_commands()
@@ -96,9 +81,7 @@ def run_cycle(last_report_hour, is_paused):
         state = update_account_balance(state, kis_positions, current_cash, total_equity)
 
     safe_save_json(state, STATE_FILE)
-    # Dead Code
-    # current_cash = state.get("cash_balance", 0.0)
-    # total_equity = state.get("total_equity", 20000.0)
+
     logger.info(f"Synchronization complete. Currently available cash: ${current_cash:,.2f}")
     time.sleep(1.0)
     current_hour = datetime.now(timezone.utc).hour
@@ -179,6 +162,7 @@ def run_cycle(last_report_hour, is_paused):
 # [Implementation Unit]
 if __name__ == "__main__":
     start_msg = "Algorithmic trading engine v2.0 launched."
+    check_holiday_and_shutdown()
     logger.info(start_msg)
     send_message(start_msg)
 
