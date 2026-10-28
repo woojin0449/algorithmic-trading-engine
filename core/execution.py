@@ -1,20 +1,10 @@
-# import math
-# from datetime import datetime, timedelta
-# import pytz
-
-# from config import *
-# from api.kis_broker import send_us_order
-# from utils.file_io import safe_save_json, load_json, save_closed_trade
-# from utils.logger import logger
-
-import logging
 from datetime import datetime, timezone
+from typing import Any
 from zoneinfo import ZoneInfo
 from api.kis_broker import send_us_order, get_order_execution, cancel_order
-from utils.file_io import save_closed_trade # 수정된 CSV 저장 함수 임포트
-
-logger = logging.getLogger(__name__)
-
+from utils.file_io import save_closed_trade
+from config import RISK_PER_UNIT, STOP_N, PYRAMID_N, MAX_UNITS
+from utils.logger import logger
 # 내부 헬퍼 함수: 체결 상태 장부 기록
 #신규
 def _record_buy_execution(state, pending_order, execution, filled_qty):
@@ -66,7 +56,30 @@ def _record_buy_execution(state, pending_order, execution, filled_qty):
     
     last_entry = entries[-1]
     pos["latest_atr"] = pending_order.get("atr", pos.get("latest_atr", 0.0))
-    pos["stop_loss"] = last_entry["price"] - (2 * pos["latest_atr"])
+    old_stop = pos.get("stop_loss", 0.0)
+    new_stop = last_entry["price"] - (STOP_N * pos["latest_atr"])
+
+    if len(entries) == 1 or old_stop <= 0:
+        # 최초 진입: 실제 체결가 기준으로 반영
+        pos["stop_loss"] = new_stop
+        logger.info(
+            f"[{ticker}] Stop Loss 설정 ${new_stop:.2f} "
+            f"(unit {unit} @ ${last_entry['price']:.2f}, ATR={pos['latest_atr']:.2f})"
+        )
+    elif new_stop > old_stop:
+        # 피라미딩: 기존 stop보다 높을 때만 상향 -> 전체 포지션 손절선이 함께 올라감
+        pos["stop_loss"] = new_stop
+        logger.info(
+            f"[{ticker}] Stop Loss 상향 ${old_stop:.2f} → ${new_stop:.2f} "
+            f"(unit {unit} @ ${last_entry['price']:.2f}, ATR={pos['latest_atr']:.2f})"
+        )
+    else:
+        # 슬리피지로 신규 유닛 체결가가 낮아도 손절선은 유지
+        logger.info(
+            f"[{ticker}] Stop Loss 유지 ${old_stop:.2f} "
+            f"(신규 계산 ${new_stop:.2f} 무시, unit {unit} @ ${last_entry['price']:.2f})"
+        )
+
 
     logger.info(f"[{ticker}] Unit {unit} 체결 기록 업데이트 (누적: {filled_qty}주 @ ${execution_price:.2f})")
 
@@ -178,7 +191,7 @@ def resolve_pending_orders(token, config, state):
         previous_filled_qty = int(p_order.get("filled_qty", 0))
         newly_filled_qty = filled_qty - previous_filled_qty
 
-        # 1. 새 체결 발생 처리
+        # 새 체결 발생 처리
         if newly_filled_qty > 0:
             logger.info(f"[{ticker}] ODNO:{odno} 신규 체결 {newly_filled_qty}주 (누적 {filled_qty}주)")
             if action == "buy":
@@ -187,7 +200,7 @@ def resolve_pending_orders(token, config, state):
                 logger.info(f"[{ticker}] 매도 부분 체결 {newly_filled_qty}주")
             p_order["filled_qty"] = filled_qty
 
-        # 2. 전량 체결 완료 처리
+        # 전량 체결 완료 처리
         if nccs_qty == 0:
             logger.info(f"[{ticker}] 주문(ODNO:{odno}) 전량 체결 확인 완료.")
             if action == "sell":
@@ -222,6 +235,7 @@ def update_account_balance(state, kis_positions, current_cash, total_equity):
                 "latest_atr": 0.0,
                 "pending_action": False,
                 "entries": [{
+
                     "unit": 1,
                     "qty": kis_data["qty"],
                     "price": kis_data["avg_price"],
@@ -243,289 +257,227 @@ def update_account_balance(state, kis_positions, current_cash, total_equity):
             del local_positions[ticker]
     return state
 
-# def update_balance_and_positions(state):
-#     bal_data = load_json(BALANCE_FILE) or {"usd_balance": 20000.0}
-#     usd_cash = bal_data["usd_balance"]
-
-#     stock_value = 0.0
-#     for ticker, pos in state.items():
-#         if pos.get('units', 0) > 0:
-#             stock_value += pos.get('qty', 0) * pos.get('current_price', 0)
-    
-#     total_equity = usd_cash + stock_value
-
-#     balance_data = {
-#         "usd_balance": usd_cash,
-#         "total_equity": total_equity,
-#         "stock_value": stock_value,
-#         "last_update": datetime.now(pytz.timezone('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')
-#     }
-#     safe_save_json(balance_data, BALANCE_FILE)
-#     logger.info(f"Asset Update: Total Equity=${total_equity:,.2f}, Cash=${usd_cash:,.2f}, Stocks=${stock_value:,.2f}")
-#     return total_equity, usd_cash
-
-
-# def handle_entry(token, ticker, state, indicators, total_equity):
-
-#     last_liquidated = load_json(LAST_LIQUIDATION_FILE) or {}
-#     if ticker in last_liquidated:
-#         last_time = datetime.fromisoformat(last_liquidated[ticker])
-#         if datetime.now(pytz.timezone('Asia/Seoul')) - last_time < timedelta(hours=24):
-#             return
-
-    
-#     p = state.get(ticker, {
-#         'qty': 0, 'total_entry_price': 0,'units': 0,
-#         'last_entry_price': 0, 'stop_loss': 0, 'current_price': indicators['current_price'],
-#         'latest_atr': 0, 'pending_action': False
-#     })
-
-#     curr = indicators['current_price']
-#     active_count = sum(1 for v in state.values() if v.get('units', 0) > 0)
-
-#     # 1. 신규 진입 (1차 매수)
-#     if p['units'] == 0:
-#         if active_count >= MAX_HOLDINGS:
-#             return
-            
-#         if curr > indicators['dc_upper'] and curr > indicators['ma200']:
-#             # [가비지 틱 방어] 첫 감지 시 1턴 대기
-#             if not p.get('pending_action', False):
-#                 logger.info(f"[{ticker}] 1차 돌파 시그널 감지. 가비지 틱 방어를 위해 1턴(5분) 대기합니다.")
-#                 p['pending_action'] = True
-#                 state[ticker] = p
-#                 return
-                
-#             # 두 번째 사이클에서도 유지되면 진입 확정
-#             p['pending_action'] = False
-            
-#             fixed_atr = indicators['atr']
-#             unit_size = math.floor((total_equity * RISK_PER_UNIT) / (STOP_N * fixed_atr))
-#             if unit_size <= 0:
-#                 return
-
-#             cost = curr * unit_size
-#             bal_data = load_json(BALANCE_FILE) or {"usd_balance": 20000.0}
-#             usd_cash = bal_data["usd_balance"]
-#             if usd_cash < cost:
-#                 logger.warning(f"[{ticker}] 현금 부족: {usd_cash:.2f} < {cost:.2f}. 매수 진입 포기.")
-#                 return
-
-#             if send_us_order(token, APP_KEY, APP_SECRET, CANO, ticker, True, unit_size, curr):
-#                 update_cash_balance(-cost)
-#                 msg = f"[1차 진입] {ticker} 55일 돌파\n수량: {unit_size}주 / 단가: ${curr:.2f}"
-#                 logger.info(msg)
-                
-
-#                 p['qty'] = unit_size
-#                 p['total_entry_price'] = cost
-#                 p['units'] = 1
-#                 p['last_entry_price'] = curr
-#                 p['latest_atr'] = fixed_atr 
-#                 p['stop_loss'] = curr - (STOP_N * fixed_atr)
-#                 p['current_price'] = curr
-#                 state[ticker] = p
-#         else:
-#             # 시그널 소멸 시 대기 플래그 해제
-#             if p.get('pending_action', False):
-#                 logger.info(f"[{ticker}] 1차 시그널 소멸. 가비지 틱으로 간주하여 진입을 취소합니다.")
-#                 p['pending_action'] = False
-#                 state[ticker] = p
-
-#     # 2. 피라미딩 (추가 매수)
-#     elif 0 < p['units'] < MAX_UNITS:
-#         fixed_atr = p['latest_atr']
-#         pyramid_target = p['last_entry_price'] + (PYRAMID_N * fixed_atr)
-        
-#         if curr > pyramid_target:
-#             # [가비지 틱 방어] 피라미딩 첫 감지 시 1턴 대기
-#             if not p.get('pending_action', False):
-#                 logger.info(f"[{ticker}] 피라미딩 시그널 감지. 가비지 틱 방어를 위해 1턴(5분) 대기합니다.")
-#                 p['pending_action'] = True
-#                 state[ticker] = p
-#                 return
-                
-#             # 두 번째 사이클에서도 유지되면 불타기 확정
-#             p['pending_action'] = False
-            
-#             add_qty = math.floor((total_equity * RISK_PER_UNIT) / (STOP_N * fixed_atr))
-#             if add_qty <= 0:
-#                 return
-
-#             cost = curr * add_qty
-#             bal_data = load_json(BALANCE_FILE) or {"usd_balance": 20000.0}
-#             usd_cash = bal_data["usd_balance"]
-#             if usd_cash < cost:
-#                 logger.warning(f"[{ticker}] 현금 부족: {usd_cash:.2f} < {cost:.2f}. 추가 매수 포기.")
-#                 return
-
-#             if send_us_order(token, APP_KEY, APP_SECRET, CANO, ticker, True, add_qty, curr):
-#                 update_cash_balance(-cost)
-#                 new_units = p['units'] + 1
-#                 msg = f"[{new_units}차 피라미딩] {ticker} 불타기\n수량: {add_qty}주 / 단가: ${curr:.2f}"
-#                 logger.info(msg.replace("\n", " | "))
-                
-
-#                 p['qty'] += add_qty
-#                 p['total_entry_price'] += cost
-#                 p['units'] = new_units
-#                 p['last_entry_price'] = curr
-#                 p['stop_loss'] = curr - (STOP_N * fixed_atr)
-#                 p['current_price'] = curr
-#                 state[ticker] = p
-#         else:
-#             # 시그널 소멸 시 대기 플래그 해제 (가짜 틱)
-#             if p.get('pending_action', False):
-#                 logger.info(f"[{ticker}] 피라미딩 시그널 소멸. 가비지 틱으로 간주하여 진입을 취소합니다.")
-#                 p['pending_action'] = False
-#                 state[ticker] = p
-
-# def handle_exit(token, ticker, state, indicators):
-#     """청산 조건을 확인하고 매도합니다."""
-
-#     p = state.get(ticker)
-#     if not p or p.get('units', 0) == 0:
-#         return
-
-#     curr = indicators['current_price']
-    
-#     fixed_atr = p['latest_atr']
-#     stop_loss_price = p['stop_loss']
-    
-#     # [수정] Issue 3: 청산 사유 판별
-#     exit_reason = None
-#     if curr < indicators['dc_lower']:
-#         exit_reason = "Trailing Stop(20일 저점 이탈)"
-#     elif curr < stop_loss_price:
-#         exit_reason = f"2.0N Hard Stop(손절가 ${stop_loss_price:.2f} 도달)"
-
-#     if exit_reason:
-#         if send_us_order(token, APP_KEY, APP_SECRET, CANO, ticker, False, p['qty'], curr):
-#             # [수정] Issue 1: 최종 수익률(ROI) 계산
-#             revenue = curr * p['qty']
-#             cost = p['total_entry_price']
-#             roi_pct = ((revenue - cost) / cost) * 100 if cost > 0 else 0
-
-#             update_cash_balance(revenue)
-
-#             # 텔레그램 및 로거 메시지 고도화
-#             msg = f"[청산] {ticker} 전량 매도\n사유: {exit_reason}\n매도단가: ${curr:.2f}\n최종 수익률: {roi_pct:+.2f}%"
-            
-#             logger.info(msg.replace("\n", " | "))
-#             #텔레그램 전송은 main에서
-            
-#             #Added file saving functionality.
-#             save_closed_trade(ticker, curr, p['qty'], cost, revenue, roi_pct, exit_reason)
-            
-#             last_liquidated = load_json(LAST_LIQUIDATION_FILE)or {}
-#             last_liquidated[ticker] = datetime.now(pytz.timezone('Asia/Seoul')).isoformat()
-#             safe_save_json(last_liquidated, LAST_LIQUIDATION_FILE)
-
-#             # 상태 초기화
-#             state[ticker] = {
-#                 'qty': 0, 'total_entry_price': 0, 'units': 0,
-#                 'last_entry_price': 0, 'stop_loss': 0, 'current_price': curr, 'latest_atr': 0
-#             }
-
 def handle_entry(token, config, state, ticker, indicators, current_cash, total_equity):
     local_positions = state.setdefault("positions", {})
     pending_orders = state.setdefault("pending_orders", [])
     pos = local_positions.get(ticker)
 
-    if any(order.get("ticker") == ticker for order in pending_orders): return
-    if pos and pos.get("pending_action", False): return
+    if any(order.get("ticker") == ticker for order in pending_orders):
+        return
+    if pos and pos.get("pending_action", False):
+        return
 
     curr_price = indicators["current_price"]
     order_excd = indicators["order_exchange"]
-    atr = indicators.get("atr_20", 0.0)
-    donchian_high = indicators.get("donchian_high_20", 0.0)
 
-    if atr <= 0: return
+    # strategy와 스키마 명칭 불일치 버그 수정
+    atr = indicators.get("atr", 0.0)
+    donchian_high = indicators.get("dc_upper", 0.0)
+    ma200 = indicators.get("ma200", 0.0)
 
-    # 1% Risk Rule (RISK_PER_UNIT 변수가 선언되어 있다고 가정. 예: 0.01)
-    risk_amount = total_equity * 0.01 
-    unit_qty = int(risk_amount / atr)
-    if unit_qty <= 0: return
+    # 디버그할때 용이하게 수정. Silent return 제거
+    if not atr or atr <= 0:
+        logger.info(f"[{ticker}] 매수 SKIP: ATR 결측/0 (atr={atr})")
+        return
+    if donchian_high <= 0:
+        logger.info(f"[{ticker}] 매수 SKIP: DC_upper 결측 (dc_upper={donchian_high})")
+        return
+    if ma200 <= 0:
+        logger.info(f"[{ticker}] 매수 SKIP: MA200 결측 (ma200={ma200})")
+        return
 
-    estimated_cost = unit_qty * curr_price
-    if estimated_cost > current_cash: return
+    # 1% 리스크와 STOP_N * ATR 반영
+    #   기존: risk_amount / atr  -> 손절폭 무시로 수량 2배 과대
+    risk_amount = total_equity * RISK_PER_UNIT
+    risk_per_share = STOP_N * atr
+    qty_by_risk = int(risk_amount / risk_per_share) if risk_per_share > 0 else 0
+
+    # 현금 여유분과 작은 값 채택 -> 현금부족 silent return 제거
+    qty_by_cash = int((current_cash * 0.98) / curr_price) if curr_price > 0 else 0
+    unit_qty = min(qty_by_risk, qty_by_cash)
+    if unit_qty <= 0:
+        logger.info(f"[{ticker}] 매수 SKIP: 수량 0 (risk_qty={qty_by_risk}, cash_qty={qty_by_cash})")
+        return
 
     is_buy_signal = False
     signal_type = ""
     target_unit = None
 
     if not pos:
-        if curr_price > donchian_high and curr_price >= indicators["ma200"]:
-            is_buy_signal, target_unit, signal_type = True, 1, "NEW_ENTRY(Breakout)"
+        if curr_price > donchian_high and curr_price >= ma200:
+            is_buy_signal, target_unit, signal_type = True, 1, "NEW_ENTRY(Breakout 55H)"
     else:
         entries = pos.get("entries", [])
         current_units = len(entries)
-        if current_units >= 4: return
-        
-        if not entries: return
+        if current_units >= MAX_UNITS:         # config의 MAX_UNITS 사용
+            return
+        if not entries:
+            return
         last_entry_price = entries[-1].get("price", 0.0)
-        if last_entry_price <= 0: return
-        
-        if curr_price >= last_entry_price + (0.5 * atr):
+        if last_entry_price <= 0:
+            return
+        if curr_price >= last_entry_price + (PYRAMID_N * atr):  # config PYRAMID_N
             is_buy_signal = True
             target_unit = current_units + 1
             signal_type = f"PYRAMIDING(Unit {target_unit})"
 
-    if not is_buy_signal: return
+    if not is_buy_signal:
+        return
 
-    logger.info(f"[{ticker}] 매수 신호 ({signal_type}) - Unit {target_unit}, 수량:{unit_qty}주")
+    logger.info(f"[{ticker}] 매수 신호 ({signal_type}) - Unit {target_unit}, 수량:{unit_qty}주 @ ${curr_price:.2f}")
     success, odno = send_us_order(token, config["APP_KEY"], config["APP_SECRET"], config["CANO"], ticker, order_excd, True, unit_qty, curr_price)
 
-    if not success or not odno: return
+    # 주문 실패도 로그로 남김
+    if not success or not odno:
+        logger.error(f"[{ticker}] 매수 주문 실패 (success={success}, odno={odno})")
+        return
 
     now_str = datetime.now(timezone.utc).isoformat(timespec="seconds")
     pending_orders.append({
         "ticker": ticker, "odno": odno, "action": "buy", "unit": target_unit,
         "qty": unit_qty, "filled_qty": 0, "exchange": order_excd,
-        "order_price": curr_price, "atr": atr, "stop_loss": curr_price - (2 * atr),
+        "order_price": curr_price, "atr": atr, "stop_loss": curr_price - (STOP_N * atr),
         "timestamp": now_str
     })
 
     if not pos:
         local_positions[ticker] = {
             "qty": 0, "units": 0, "avg_price": 0.0, "current_price": curr_price,
-            "stop_loss": curr_price - (2 * atr), "latest_atr": atr,
+            "stop_loss": curr_price - (STOP_N * atr), "latest_atr": atr,
             "pending_action": True, "entries": []
         }
     else:
+        # [의도 명시] 피라미딩 신호 시점에는 stop_loss를 올리지 않는다.
+        #  → 주문은 아직 "포지션"이 아니므로 미리 손절을 올리면 미체결 시 조기 손절 위험.
+        #  → 실제 손절선 상향은 체결 후 _record_buy_execution에서
+        #    (신규 유닛 실제 체결가 - STOP_N * ATR) 기준, 단조 상향으로 수행된다.
         pos["pending_action"] = True
+
 
 def handle_exit(token, config, state, ticker, indicators):
     local_positions = state.get("positions", {})
     pos = local_positions.get(ticker)
 
-    if not pos or pos.get("pending_action", False): return False
-    qty = pos.get("qty", 0)
-    if qty <= 0: return False
+    # Silent return 제거. 각 SKIP 사유에 로그. 단,정상 흐름은 debug 레벨로 낮춤
+    if not pos:
+        logger.debug(f"[{ticker}] EXIT SKIP: 로컬 포지션 없음")
+        return False
 
     curr_price = indicators['current_price']
     order_excd = indicators['order_exchange']
     stop_loss = pos.get('stop_loss', 0.0)
-    donchian_low = indicators.get('donchian_low_10', 0.0)
+    donchian_low = indicators.get('dc_lower', 0.0)
+
+    # pending_action=True 케이스 분류
+    # 매수(피라미딩/최초) 미체결 대기 중에도 stop-loss 이탈 시
+    # 매수 주문 즉시 취소 + 보유 잔량 전량 시장가 청산
+
+    if pos.get("pending_action", False):
+        all_pending = state.get("pending_orders", [])
+        pending_buys = [o for o in all_pending if o.get("ticker") == ticker and o.get("action") == "buy"]
+        pending_sells = [o for o in all_pending if o.get("ticker") == ticker and o.get("action") == "sell"]
+
+        # 매도 주문이 이미 나가있으면 중복 청산방지를 위해 대기
+        if pending_sells:
+            if pending_buys:
+                logger.warning(f"[{ticker}] 매수/매도 주문 동시 존재 - 데이터 이상 식별. 매도 pending 우선 처리.")
+            logger.debug(f"[{ticker}] EXIT SKIP: 매도 주문 진행 중")
+            return False
+
+        if pending_buys:
+            # 스탑로스 초기값 세팅 0일때 대기
+            if stop_loss <= 0 or curr_price > stop_loss:
+                logger.debug(
+                    f"[{ticker}] EXIT SKIP: 매수 pending 대기 "
+                    f"(price={curr_price:.2f}, stop={stop_loss:.2f})"
+                )
+                return False
+            
+            logger.warning(
+                f"[{ticker}] 매수 pending 중 stop loss 이탈 "
+                f"(price={curr_price:.2f} <= stop={stop_loss:.2f}). "
+                f"매수 주문 즉시 취소 + 보유 잔량 전량 청산 시도."
+            )
+            for buy_order in list(pending_buys):
+                raw_odno = buy_order.get("odno")
+                odno = str(int(raw_odno)) if raw_odno else ""
+                if odno:
+                    try:
+                        cancel_order(
+                            token, config["APP_KEY"], config["APP_SECRET"],
+                            config["CANO"], config["ACNT_PRDT_CD"],
+                            ticker, odno, buy_order.get("exchange", "NASD")
+                        )
+                        logger.info(f"[{ticker}] 매수 주문 취소 요청 완료 (ODNO:{odno})")
+                    except Exception as e:
+                        #취소 실패시 청산 실행
+                        logger.error(f"[{ticker}] 매수 주문 취소 실패 (ODNO:{odno}): {e}")
+                else:
+                    logger.warning(f"[{ticker}] 취소 대상 ODNO 비어있음. pending_order에서만 제거.")
+                #재시도 무한반복 방지
+                try:
+                    state["pending_orders"].remove(buy_order)
+                except ValueError:
+                    pass
+            
+            pos["pending_action"] = False
+
+            #최초 진입이 미체결일시 -> 청산 잔량 없음
+            if pos.get("qty", 0) <= 0:
+                logger.info(f"[{ticker}] 보유 잔고 없음 (qty=0). 매수 주문 취소만 수행.")
+                return False
+        
+        else:
+            ## pending_action=True인데 pending_buys 값이 없음. -> pending 해제
+            logger.warning(
+                f"[{ticker}] pending_action=True 지만 pending_orders에 해당 주문 없음. pending 해제."
+            )
+            pos["pending_action"] = False
+    
+    #공통 청산 판단
+    qty = pos.get("qty", 0)
+    if qty <= 0:
+        logger.warning(f"[{ticker}] EXIT SKIP: 보유 수량 비정상 (qty={qty})")
+        return False
+
+    if stop_loss <= 0 and donchian_low <= 0:
+        logger.warning(
+            f"[{ticker}] EXIT 불가: stop_loss({stop_loss})와 dc_lower({donchian_low})가 모두 무효값"
+        )
+        return
 
     is_sell_signal = False
     signal_type = ""
 
-    if curr_price <= stop_loss:
+    if stop_loss > 0 and curr_price <= stop_loss:
         is_sell_signal, signal_type = True, "STOP_LOSS (ATR)"
     elif donchian_low > 0 and curr_price <= donchian_low:
-        is_sell_signal, signal_type = True, "EXIT (Donchian Low 10)"
+        is_sell_signal, signal_type = True, "EXIT (Donchian Low 20)"
 
-    if is_sell_signal:
-        logger.info(f"[{ticker}] 매도 신호 ({signal_type}) - 전량({qty}주) 청산")
-        success, odno = send_us_order(token, config['APP_KEY'], config['APP_SECRET'], config['CANO'], ticker, order_excd, False, qty, curr_price)
+    if not is_sell_signal:
+        logger.debug(
+            f"[{ticker}] EXIT 신호 없음 "
+            f"(price={curr_price:.2f}, stop={stop_loss:.2f}, dc_low={donchian_low:.2f})"
+        )
+        return False
+        
+    logger.info(f"[{ticker}] 매도 신호 ({signal_type}) - 전량({qty}주) 청산 @ ${curr_price:.2f}")
+    success, odno = send_us_order(
+        token, config['APP_KEY'], config['APP_SECRET'], config['CANO'],
+        ticker, order_excd, False, qty, curr_price
+    )
+    if not success or not odno:
+        logger.error(f"[{ticker}] 매도 주문 실패 (success={success}, odno={odno})")
+        return False
+    
 
-        if success and odno:
-            now_str = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            state.setdefault("pending_orders", []).append({
-                "ticker": ticker, "odno": odno, "action": "sell", "qty": qty, "filled_qty": 0,
-                "exchange": order_excd, "order_price": curr_price, "timestamp": now_str, "reason": signal_type
-            })
-            pos['pending_action'] = True
-            return True
-    return False
+    now_str = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    state.setdefault("pending_orders", []).append({
+        "ticker": ticker, "odno": odno, "action": "sell", "qty": qty, "filled_qty": 0,
+        "exchange": order_excd, "order_price": curr_price, "timestamp": now_str, "reason": signal_type
+    })
+    pos['pending_action'] = True
+    return True
+
+
+

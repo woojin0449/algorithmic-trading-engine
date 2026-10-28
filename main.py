@@ -73,9 +73,11 @@ def run_cycle(last_report_hour, is_paused):
     
     resolve_pending_orders(token, config, state)
     time.sleep(1.0)
+    #current_cash None으로 저장되는거 주의해야함.
     total_equity, current_cash, kis_positions = get_account_balance(token, APP_KEY, APP_SECRET, CANO, ACNT_PRDT_CD)
     if kis_positions is None:
         logger.error("잔고 API 호출 실패. 기존 로컬 장부를 유지하고 다음 사이클로 넘어갑니다.")
+        return last_report_hour, is_paused
 
     else:
         state = update_account_balance(state, kis_positions, current_cash, total_equity)
@@ -129,7 +131,7 @@ def run_cycle(last_report_hour, is_paused):
                 if pos["stop_loss"] == 0.0 and indicators.get("atr", 0) > 0:
                     pos["latest_atr"] = indicators["atr"]
                     # 기본 터틀 룰: 평단가 - (2 * atr) 을 손절가로 세팅 (전략에 맞게 배수 조절 가능)
-                    pos["stop_loss"] = pos["avg_price"] - (2 * indicators["atr"])
+                    pos["stop_loss"] = pos["avg_price"] - (STOP_N * indicators["atr"])
                     logger.info(f"[{ticker}] 초기 Stop Loss 0.0 감지. {pos['stop_loss']:.2f}로 안전 세팅 완료.")
                 is_just_sold = handle_exit(token, config, state, ticker, indicators)
 

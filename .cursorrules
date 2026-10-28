@@ -1,0 +1,49 @@
+# Quantitative Trading & System Engine Rules
+
+## 1. Trading Philosophy (Core)
+- **Strict Trend Following Only**: Exclusively implement and respect Trend Following methodologies (e.g., Jesse Livermore, Richard Dennis / Turtle Trading). Do NOT suggest or introduce Mean Reversion logic unless explicitly requested.
+- **Entry Logic**: Focus on Pivotal Point breakouts, volume filters, and Donchian Channel / N-value breakouts.
+- **Risk Management**:
+  - Maximum risk per trade is strictly 1% of total equity.
+  - Always use ATR (N-value) or volatility metrics for stop loss calculation and position sizing.
+  - [CRITICAL] Notional Cap: Always cap the maximum position size (e.g., max 20% of total equity per unit) to prevent 'insufficient cash' errors on low-ATR stocks. Final Qty = min(qty_by_risk, qty_by_notional).
+- **Scaling In (Pyramiding)**: Prioritize adding to winning positions as price breaks favorable levels while dynamically trailing the stop loss.
+
+## 2. Strict Prohibitions in Quant Coding
+- **NO Look-ahead Bias**: Never use current, close, or future data to calculate historical signals in Pandas/NumPy. Always shift data properly (e.g., `.shift(1)`).
+- **NO Mean Reversion Default**: Do not suggest RSI divergence, Bollinger Band lower-band bounces, or counter-trend ideas.
+- **NO Silent Returns**: Never return early out of a function during entry/exit logic without logging the reason (e.g., logger.debug("Skip: Not enough cash")). Failures must be traceable.
+
+## 3. Code Modification & Quality Discipline
+- **Minimal Changes**: Touch only what you must. Clean up only your own mess.
+  - Remove imports, variables, or functions that YOUR changes made unused.
+  - Do NOT touch or refactor adjacent code, comments, or formatting that are not broken.
+  - Do NOT delete pre-existing dead code; mention it instead.
+  - Match existing project code style even if different from preferences.
+- **Simplicity First**: Write the minimum code that solves the problem. Avoid speculative features, unrequested abstractions, unnecessary configurability, and error handling for impossible scenarios.
+- **Think Before Executing**:
+  - State assumptions explicitly before suggesting or modifying code.
+  - If multiple valid interpretations exist, present them rather than picking silently.
+  - Surface trade-offs and push back if a simpler approach exists.
+  - If something is ambiguous, stop and ask.
+- **Verifiable Execution Plan**:
+  - For complex multi-step tasks, provide a short plan with explicit verification checks:
+    Format: `[Step] Verify: [Specific Check]`
+  - Transform vague tasks into concrete verifiable outcomes (e.g., reproduce edge cases first, ensure tests pass).
+
+## 4. Tech Stack & Environment
+- **Project**: Algorithmic Trading Engine (Korea Investment & Securities / KIS Open API)
+- **Language**: Python 3.10+
+- **Environment**: Linux / Ubuntu (ARM/AWS Graviton compatible) & Local Development
+- **Libraries**: Pandas, NumPy, Requests/WebSockets, Streamlit
+- **Directory Structure**: 
+  api/ : KIS API broker integration & Telegram alerts.
+
+  core/ : Execution logic & Trend-following strategy conditions.
+
+  data/ : OHLCV fetch & Indicator calculations.
+
+  utils/ : Logging (RotatingFileHandler) & Time checking.
+- **API Reliability**:
+  - Handle KIS API rate limits (TPS / RPM throttling) gracefully.
+  - Implement reliable token refresh and websocket reconnection handling without blocking main execution threads.
